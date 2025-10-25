@@ -1,10 +1,12 @@
 """
-YouTube Chat/Comment Downloader Core Module
+YouTube Chat/Comment Downloader Core Module (V5 Enhanced)
 
 Downloads YouTube live chat replay and regular comments using innertube API and yt-dlp.
 Outputs data in JSON format with user information, timestamps, and message content.
 
-Features:
+V5 Features:
+- Automatic rank badge extraction (#1, #2, #3, etc.)
+- Includes rank_number, rank_badge_icon, rank_badge_color fields
 - Continuous polling mode for live streams - runs until Ctrl+C
 - No arbitrary iteration limits
 - Waits and retries when no continuation token is found (live streams)
@@ -26,7 +28,7 @@ from dateutil import parser as date_parser
 
 
 class YouTubeChatDownloader:
-    """Main class for downloading YouTube chat and comments."""
+    """Main class for downloading YouTube chat and comments with rank extraction."""
     
     def __init__(self):
         self.session = requests.Session()
@@ -366,7 +368,7 @@ class YouTubeChatDownloader:
         return messages, latest_offset
     
     def _parse_message_renderer(self, renderer: Dict, video_offset: str = "0") -> Optional[Dict]:
-        """Parse message renderer (both text and paid messages)."""
+        """Parse message renderer (both text and paid messages) with V5 rank extraction."""
         try:
             # Get author info
             author = renderer.get("authorName", {})
@@ -428,9 +430,10 @@ class YouTubeChatDownloader:
             elif "liveChatMembershipItemRenderer" in str(renderer):
                 message_type = "membership"
             
+            # V5: Extract rank badge information
+            rank_info = self._extract_rank_badge(renderer)
+            
             return {
-                # "renderer": renderer,
-                # "author": json.dumps(renderer),
                 "user_id": author_id,
                 "user_display_name": author_name,
                 "user_handle": author_name,
@@ -441,7 +444,11 @@ class YouTubeChatDownloader:
                 "badges": self._extract_badges(renderer),
                 "message_id": renderer.get("id", ""),
                 "purchase_amount": purchase_amount,
-                "video_offset_ms": video_offset
+                "video_offset_ms": video_offset,
+                # V5: Rank badge fields
+                "rank_number": rank_info["rank_number"],
+                "rank_badge_icon": rank_info["rank_badge_icon"],
+                "rank_badge_color": rank_info["rank_badge_color"]
             }
         except Exception as e:
             print(f"Error parsing message: {e}")
@@ -472,6 +479,46 @@ class YouTubeChatDownloader:
                     if badge_text:
                         badges.append(self._normalize_text(badge_text))
         return badges
+    
+    def _extract_rank_badge(self, renderer: Dict) -> Dict[str, any]:
+        """Extract rank badge information from beforeContentButtons (V5 feature).
+        
+        Returns dict with keys: rank_number, rank_badge_icon, rank_badge_color
+        """
+        rank_info = {
+            "rank_number": None,
+            "rank_badge_icon": None,
+            "rank_badge_color": None
+        }
+        
+        if "beforeContentButtons" not in renderer:
+            return rank_info
+        
+        for button in renderer["beforeContentButtons"]:
+            if "buttonViewModel" not in button:
+                continue
+            
+            btn = button["buttonViewModel"]
+            
+            # Check if this is a crown/rank button
+            if btn.get("iconName") == "CROWN" and "title" in btn:
+                rank_title = btn["title"]
+                
+                # Extract rank number from title (e.g., "#3" -> 3)
+                rank_match = re.search(r'#(\d+)', rank_title)
+                if rank_match:
+                    rank_info["rank_number"] = int(rank_match.group(1))
+                    rank_info["rank_badge_icon"] = "CROWN"
+                    
+                    # Extract background color if available
+                    if "customBackgroundColor" in btn:
+                        # Color is stored as ARGB integer, convert to hex
+                        color_int = btn["customBackgroundColor"]
+                        rank_info["rank_badge_color"] = f"#{color_int:08X}"
+                
+                break  # Only one rank badge per message
+        
+        return rank_info
     
     def get_regular_comments(self, video_id: str) -> List[Dict]:
         """Get regular video comments using yt-dlp with refined author info."""
@@ -543,7 +590,11 @@ class YouTubeChatDownloader:
                             "message_id": comment.get('id', ''),
                             "badges": [],
                             "purchase_amount": "",
-                            "video_offset_ms": "0"
+                            "video_offset_ms": "0",
+                            # V5: Rank fields (regular comments don't have ranks)
+                            "rank_number": None,
+                            "rank_badge_icon": None,
+                            "rank_badge_color": None
                         }
                         comments.append(comment_data)
         except Exception as e:
@@ -560,7 +611,7 @@ class YouTubeChatDownloader:
             print(f"⚠️  Error saving to file: {e}")
     
     def print_message(self, msg: Dict):
-        """Print message in real-time with formatted output."""
+        """Print message in real-time with formatted output (V5: includes rank)."""
         datetime_str = msg.get('datetime', '')
         if datetime_str:
             # Format ISO datetime to more readable format
@@ -575,20 +626,26 @@ class YouTubeChatDownloader:
         handle = msg.get('user_handle', '')
         comment = msg.get('comment', '')
         badges = msg.get('badges', [])
+        rank_number = msg.get('rank_number')
         
         # Use timestamp or datetime, prefer timestamp for video offset
         time_display = timestamp if timestamp and timestamp != '0:00' else datetime_str
+        
+        # V5: Add rank badge to display if present
+        rank_str = ""
+        if rank_number is not None:
+            rank_str = f" 👑#{rank_number}"
         
         # Add badges to display if present
         badge_str = ""
         if badges:
             badge_str = f" [{', '.join(badges)}]"
         
-        # Format: [datetime] handle (display name)[badges]: message
+        # Format: [datetime] handle (display name)[rank][badges]: message
         if time_display:
-            print(f"[{time_display}] {handle} ({display_name}){badge_str}: {comment}")
+            print(f"[{time_display}] {handle} ({display_name}){rank_str}{badge_str}: {comment}")
         else:
-            print(f"{handle} ({display_name}){badge_str}: {comment}")
+            print(f"{handle} ({display_name}){rank_str}{badge_str}: {comment}")
     
     def download_chat(self, video_url: str, chat_type: str = "both", output_file: Optional[str] = None, quiet: bool = False) -> List[Dict]:
         """Main method to download chat/comments with continuous polling for live streams."""
