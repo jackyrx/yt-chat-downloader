@@ -429,8 +429,8 @@ class YouTubeChatDownloader:
                 message_type = "membership"
             
             return {
-                "renderer": renderer,
-                "author": json.dumps(renderer),
+                # "renderer": renderer,
+                # "author": json.dumps(renderer),
                 "user_id": author_id,
                 "user_display_name": author_name,
                 "user_handle": author_name,
