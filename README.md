@@ -1,5 +1,9 @@
 # YouTube Chat Downloader
 
+This tool provides a simple method for retrieving chat logs from both past (VOD) and ongoing YouTube live streams for data analysis.
+Live stream chats contain valuable data for understanding audience sentiment, identifying trends, and measuring engagement. 
+This downloader makes that data accessible for your research.
+
 A Python package to download YouTube live chat replays and regular comments from any YouTube video. Perfect for archiving live streams, analyzing chat interactions, or collecting comment data.
 
 ## Features
