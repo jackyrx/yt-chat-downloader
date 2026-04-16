@@ -526,6 +526,7 @@ class YouTubeChatDownloader:
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
+            'getcomments': True,
         }
         
         comments = []
